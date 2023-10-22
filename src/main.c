@@ -1,7 +1,7 @@
 /* -.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.
 * File Name   : main.c
 * Created at  : 2023-10-18
-* Updated at  : 2023-10-19
+* Updated at  : 2023-10-22
 * Author      : jeefo
 * Purpose     :
 * Description :
@@ -19,7 +19,7 @@ void shift(int* argc, char*** argv) {
   (*argv)++;
 }
 
-void help(const char* program, CommandManager* cm) {
+void help(const char* program, DynArray* cm) {
   printf("Usage: %s [command] <options...>\n\n", program);
 
   char* p = strrchr(program, '/');
@@ -28,7 +28,7 @@ void help(const char* program, CommandManager* cm) {
   }
 
   for (size_t i = 0; i < cm->length; ++i) {
-    command_print(program, cm->commands[i]);
+    command_print(program, cm->ptr[i], true);
   }
 }
 
@@ -42,15 +42,38 @@ int main(int argc, char** argv) {
   Command command = {
     .name         = "help",
     .desciption   = "Print commands and options description and exit",
-    .aliases      = malloc(ARRAY_LEN(aliases) * sizeof(char*)),
-    .alias_length = ARRAY_LEN(aliases),
   };
   for (size_t i = 0; i < ARRAY_LEN(aliases); ++i) {
-    command.aliases[i] = aliases[i];
+    dyn_array_push(&command.aliases, aliases[i]);
   }
 
-  CommandManager command_manager = {0};
-  command_manager_register(&command_manager, &command);
+  // Command option
+  {
+    CommandOption option = create_command_option(
+      "command", COMMAND_OPTION_STRING
+    );
+    option.desciption = "Show command options specified by `--command` option";
+    dyn_array_push(&command.options, &option);
+    char* option_aliases[] = {"-c"};
+    for (size_t i = 0; i < ARRAY_LEN(option_aliases); ++i) {
+      dyn_array_push(&option.aliases, option_aliases[i]);
+    }
+  }
+
+  // Command option
+  bool no_color = false;
+  {
+    CommandOption option = create_command_option(
+      "no-color", COMMAND_OPTION_BOOL
+    );
+    option.value      = &no_color;
+    option.desciption = "Print outputs without color";
+    dyn_array_push(&command.options, &option);
+  }
+
+  // Command manager
+  DynArray command_manager = {0};
+  dyn_array_push(&command_manager, &command);
 
   if (argc == 0) {
     help(program, &command_manager);

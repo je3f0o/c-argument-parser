@@ -1,56 +1,135 @@
 /* -.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.
 * File Name   : command_manager.c
 * Created at  : 2023-10-19
-* Updated at  : 2023-10-19
+* Updated at  : 2023-10-22
 * Author      : jeefo
 * Purpose     :
 * Description :
 .-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.*/
 #include "command_manager.h"
+#include "colors.h"
 #include <stdio.h>
+#include <stdint.h>
 #include <stdlib.h>
 #include <string.h>
+#include <assert.h>
 
 #define INITIAL_CAP 8
 
-static void reallocate(CommandManager* cm) {
-  if (cm->capacity == 0) {
-    cm->length   = 0;
-    cm->capacity = INITIAL_CAP;
-    cm->commands = malloc(sizeof(Command) * INITIAL_CAP);
+static const char* command_type_to_string(CommandOptionType type) {
+  switch (type) {
+  case COMMAND_OPTION_STRING : return "String";
+  case COMMAND_OPTION_INT    : return "Int";
+  case COMMAND_OPTION_UINT   : return "UInt";
+  case COMMAND_OPTION_BOOL   : return "Boolean";
+  default:
+    assert(false && "INVALID OPTION TYPE");
+  }
+}
+
+static void print_aliases(
+  DynArray* aliases,
+  size_t    indentation,
+  bool      has_color
+) {
+  if (aliases->length > 0) {
+    for (size_t i = 0; i < indentation; ++i) {
+      putc(' ', stdout);
+    }
+
+    if (has_color) {
+      printf("\x1b[%dm", UnixShellStyles.gray[0]);
+    }
+
+    printf("aliases: %s", (char*)aliases->ptr[0]);
+    for (size_t i = 1; i < aliases->length; ++i) {
+      printf(", %s", (char*)aliases->ptr[i]);
+    }
+
+    if (has_color) {
+      printf("\x1b[%dm", UnixShellStyles.gray[1]);
+    }
+
+    puts("");
+  }
+}
+
+static void print_option_value(CommandOption* option) {
+  printf(" and (Value => ");
+  switch (option->type) {
+  case COMMAND_OPTION_STRING:
+    printf("%s", (char*)option->value);
+    break;
+  case COMMAND_OPTION_INT:
+    printf("%d", *(int*)option->value);
+    break;
+  case COMMAND_OPTION_UINT:
+    printf("%d", *(uint32_t*)option->value);
+    break;
+  case COMMAND_OPTION_BOOL: {
+    bool v = *(bool*)option->value;
+    printf("%s", v ? "true" : "false");
+  } break;
+  default:
+    assert(false && "INVALID OPTION");
+  }
+  printf(")");
+}
+
+static void print_option(CommandOption* option, bool has_color) {
+  if (has_color) printf("\x1b[%dm", UnixShellStyles.cyan[0]);
+  printf("  --%s (%s)", option->name, command_type_to_string(option->type));
+
+  if (option->value != NULL) {
+    print_option_value(option);
+  }
+
+  if (has_color) printf("\x1b[%dm", UnixShellStyles.cyan[1]);
+  puts("");
+
+  if (option->desciption) {
+    printf("    %s\n", option->desciption);
+  }
+
+  print_aliases(&option->aliases, 4, has_color);
+}
+
+static const char* cyan_text(const char* text) {
+  return apply_style(text, UnixShellStyles.cyan[0], UnixShellStyles.cyan[1]);
+}
+
+static void print_command_with_colors(const char* program, Command* command) {
+  printf("%s %s %s\n", program, command->name, cyan_text("<options...>"));
+  if (command->desciption) {
+    printf("  %s\n", command->desciption);
+  }
+  print_aliases(&command->aliases, 2, true);
+
+  for (size_t i = 0; i < command->options.length; ++i) {
+    print_option(command->options.ptr[i], true);
+  }
+}
+
+void command_print(const char* program, Command* command, bool has_color) {
+  if (has_color) {
+    print_command_with_colors(program, command);
     return;
   }
 
-  cm->capacity  = cm->capacity * 2;
-  size_t size   = cm->capacity * sizeof(Command);
-  void* new_ptr = malloc(size);
-  memset(new_ptr, 0, size);
-  memcpy(new_ptr, cm->commands, cm->length * sizeof(Command));
-}
-
-void command_manager_register(
-  CommandManager* cm,
-  Command*        command
-) {
-  if (cm->length >= cm->capacity) {
-    reallocate(cm);
-  }
-
-  Command* clone = malloc(sizeof(Command));
-  memcpy(clone, command, sizeof(Command));
-  cm->commands[cm->length++] = clone;
-}
-
-void command_print(const char* program, Command* command) {
   printf("%s %s <options...>\n", program, command->name);
   if (command->desciption) {
     printf("  %s\n", command->desciption);
   }
-  if (command->alias_length > 0) {
-    printf("  aliases: %s", command->aliases[0]);
-    for (size_t i = 1; i < command->alias_length; ++i) {
-      printf(", %s", command->aliases[i]);
-    }
-    puts("");
+  print_aliases(&command->aliases, 2, false);
+
+  for (size_t i = 0; i < command->options.length; ++i) {
+    print_option(command->options.ptr[i], false);
   }
+}
+
+CommandOption create_command_option(const char* name, CommandOptionType type) {
+  return (CommandOption) {
+    .name = name,
+    .type = type,
+  };
 }

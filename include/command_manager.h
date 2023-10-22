@@ -1,13 +1,30 @@
 #ifndef __COMMAND_MANAGER_H__
 #define __COMMAND_MANAGER_H__
 
-#include <stddef.h>
+#include "dyn_array.h"
+#include <stdbool.h>
+
+typedef enum {
+  COMMAND_OPTION_STRING,
+  COMMAND_OPTION_INT,
+  COMMAND_OPTION_UINT,
+  COMMAND_OPTION_BOOL,
+  COMMAND_OPTION_MAX
+} CommandOptionType;
 
 typedef struct {
-  char*  name;
-  char*  desciption;
-  char** aliases;
-  size_t alias_length;
+  const char*       name;
+  const char*       desciption;
+  CommandOptionType type;
+  void*             value;
+  DynArray          aliases;
+} CommandOption;
+
+typedef struct {
+  const char* name;
+  const char* desciption;
+  DynArray    aliases;
+  DynArray    options;
 } Command;
 
 typedef struct {
@@ -16,11 +33,10 @@ typedef struct {
   size_t    capacity;
 } CommandManager;
 
-void command_print(const char* program, Command* command);
-
-void command_manager_register(
-  CommandManager* command_manager,
-  Command*        command
-);
+// Public API
+void command_print(const char* program,
+                   Command*    command,
+                   bool        has_color);
+CommandOption create_command_option(const char* name, CommandOptionType type);
 
 #endif
