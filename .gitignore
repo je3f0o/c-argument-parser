@@ -2,5 +2,8 @@
 *.swp
 *.swo
 
+# gdb buffer MacOS thing
+*.dSYM
+
 node
 arg_parser

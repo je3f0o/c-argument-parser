@@ -4,6 +4,14 @@
 #include "dyn_array.h"
 #include <stdbool.h>
 
+typedef struct Command Command;
+
+typedef void (*command_execute_t)(
+  const char* program,
+  DynArray*   cm,
+  Command*    command
+);
+
 typedef enum {
   COMMAND_OPTION_STRING,
   COMMAND_OPTION_INT,
@@ -17,15 +25,19 @@ typedef struct {
   const char*       desciption;
   CommandOptionType type;
   void*             value;
+  void*             default_value;
+  bool              is_value_set;
+  bool              has_default_value;
   DynArray          aliases;
 } CommandOption;
 
-typedef struct {
-  const char* name;
-  const char* desciption;
-  DynArray    aliases;
-  DynArray    options;
-} Command;
+struct Command {
+  const char*       name;
+  const char*       desciption;
+  DynArray          aliases;
+  DynArray          options;
+  command_execute_t execute;
+};
 
 typedef struct {
   Command** commands;
@@ -34,9 +46,12 @@ typedef struct {
 } CommandManager;
 
 // Public API
+void arg_shift(int* argc, char*** argv);
 void command_print(const char* program,
                    Command*    command,
                    bool        has_color);
 CommandOption create_command_option(const char* name, CommandOptionType type);
+
+void command_parse_options(Command* c, int* argc, char*** argv);
 
 #endif

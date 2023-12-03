@@ -1,5 +1,5 @@
 CC      = gcc
-CFLAGS  = -Wall -Wextra -Werror -std=c11
+CFLAGS  = -Wall -Wextra -Werror -std=c11 -ggdb
 HEADERS = -I ./include
 
 all:
