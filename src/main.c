@@ -1,7 +1,7 @@
 /* -.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.
-* File Name   : main.c
+ * File Name   : main.c
 * Created at  : 2023-10-18
-* Updated at  : 2023-12-03
+ * Updated at  : 2023-12-22
 * Author      : jeefo
 * Purpose     :
 * Description :
@@ -14,25 +14,54 @@
 
 #define ARRAY_LEN(arr) (sizeof(arr) / sizeof(arr[0]))
 
-void help(const char* program, DynArray* cm, Command* c) {
-  (void) c;
-  printf("Usage: %s [command] <options...>\n\n", program);
-
-  char* p = strrchr(program, '/');
-  if (p) {
-    program = p+1;
+void print_specified_command(
+  char const* program,
+  DynArray*   cm,
+  char const* command_name,
+  bool        has_color
+) {
+  for (size_t i = 0; i < cm->length; ++i) {
+    Command* command = cm->ptr[i];
+    if (strcmp(command->name, command_name) == 0) {
+      puts("");
+      command_print(program, cm->ptr[i], has_color);
+      return;
+    }
   }
 
-  bool has_color = true;
+  fprintf(stderr,
+    "ERROR: specified command option '%s' didn't found in 'help' command.\n",
+    command_name
+  );
+  exit(EXIT_FAILURE);
+}
+
+void help(const char* program, DynArray* cm, Command* c) {
+  printf("Usage: %s [command] <options...>\n", program);
+
+  char* p = strrchr(program, '/');
+  if (p) program = p+1;
+
+  bool  has_color    = true;
+  char* command_name = NULL;
   for (size_t i = 0; i < c->options.length; ++i) {
     CommandOption* o = c->options.ptr[i];
     if (strcmp(o->name, "no-color") == 0) {
       has_color = !((bool) (o->is_value_set ? o->value : o->default_value));
-      break;
+    } else if (strcmp(o->name, "command") == 0) {
+      if (o->is_value_set) {
+        command_name = o->value;
+      }
     }
   }
 
+  if (command_name != NULL) {
+    print_specified_command(program, cm, command_name, has_color);
+    return;
+  }
+
   for (size_t i = 0; i < cm->length; ++i) {
+    puts("");
     command_print(program, cm->ptr[i], has_color);
   }
 }
@@ -45,36 +74,49 @@ void foo(const char* program, DynArray* cm, Command* c) {
 }
 
 int main(int argc, char** argv) {
-  const char* program = argv[0];
+  char const* program = argv[0];
   arg_shift(&argc, &argv);
 
   // Help command
   char* aliases[] = {
     "-h", "h", "--help", "?"
   };
-  Command command = {
+  Command help_command = {
     .name         = "help",
     .desciption   = "Print commands and options description and exit",
     .execute      = help,
   };
   for (size_t i = 0; i < ARRAY_LEN(aliases); ++i) {
-    dyn_array_push(&command.aliases, aliases[i]);
+    dyn_array_push(&help_command.aliases, aliases[i]);
   }
 
-  // Help command's option
+  // Help -> command option
+  char* option_aliases[] = {"-c"};
   {
     CommandOption option = create_command_option(
       "command", COMMAND_OPTION_STRING
     );
     option.desciption = "Show command options specified by `--command` option";
-    dyn_array_push(&command.options, &option);
-    char* option_aliases[] = {"-c"};
+    dyn_array_push(&help_command.options, &option);
     for (size_t i = 0; i < ARRAY_LEN(option_aliases); ++i) {
       dyn_array_push(&option.aliases, option_aliases[i]);
     }
   }
 
-  // Help command's option
+  // Help -> number
+  {
+    CommandOption option = create_command_option(
+      "log-level", COMMAND_OPTION_INT
+    );
+    option.desciption    = "Set verbosity of log level, 0 will be disable logs";
+    option.default_value     = 0;
+    option.has_default_value = true;
+    dyn_array_push(&help_command.options, &option);
+    static char* log_alias = "-l";
+    dyn_array_push(&option.aliases, log_alias);
+  }
+
+  // Help -> 'no-color' option
   {
     CommandOption option = create_command_option(
       "no-color", COMMAND_OPTION_BOOL
@@ -82,52 +124,27 @@ int main(int argc, char** argv) {
     option.desciption        = "Print outputs without color";
     option.default_value     = false;
     option.has_default_value = true;
-    dyn_array_push(&command.options, &option);
+    dyn_array_push(&help_command.options, &option);
   }
 
   // Foo command
   Command foo_command = {
     .name         = "foo",
-    .desciption   = "Bar",
+    .desciption   = "Foo command description",
     .execute      = foo,
   };
 
   // Command manager
   DynArray command_manager = {0};
-  dyn_array_push(&command_manager, &command);
+  dyn_array_push(&command_manager, &help_command);
   dyn_array_push(&command_manager, &foo_command);
 
   if (argc == 0) {
-    help(program, &command_manager, NULL);
+    help(program, &command_manager, &help_command);
     return 0;
   }
 
-  while (argc > 0) {
-    bool is_command_found = false;
-    for (size_t i = 0; i < command_manager.length && !is_command_found; ++i) {
-      Command* c = command_manager.ptr[i];
-      if (strcmp(c->name, argv[0]) == 0) {
-        command_parse_options(c, &argc, &argv);
-        c->execute(program, &command_manager, c);
-        is_command_found = true;
-        break;
-      }
-      for (size_t j = 0; j < c->aliases.length; ++j) {
-        const char* alias_name = c->aliases.ptr[j];
-        if (strcmp(alias_name, argv[0]) == 0) {
-          command_parse_options(c, &argc, &argv);
-          c->execute(program, &command_manager, c);
-          is_command_found = true;
-          break;
-        }
-      }
-    }
-
-    if (!is_command_found) {
-      fprintf(stderr, "ERROR: couldn't find '%s' command\n", argv[0]);
-      exit(EXIT_FAILURE);
-    }
-  }
+  command_parse(argc, argv, program, &command_manager);
 
   return EXIT_SUCCESS;
 }

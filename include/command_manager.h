@@ -15,9 +15,8 @@ typedef void (*command_execute_t)(
 typedef enum {
   COMMAND_OPTION_STRING,
   COMMAND_OPTION_INT,
-  COMMAND_OPTION_UINT,
   COMMAND_OPTION_BOOL,
-  COMMAND_OPTION_MAX
+  COMMAND_OPTION_COUNT
 } CommandOptionType;
 
 typedef struct {
@@ -53,5 +52,6 @@ void command_print(const char* program,
 CommandOption create_command_option(const char* name, CommandOptionType type);
 
 void command_parse_options(Command* c, int* argc, char*** argv);
+void command_parse(int argc, char** argv, char const* program, DynArray* cm);
 
 #endif

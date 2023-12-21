@@ -1,7 +1,7 @@
 /* -.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.
-* File Name   : command_manager.c
+ * File Name   : command_manager.c
 * Created at  : 2023-10-19
-* Updated at  : 2023-12-03
+ * Updated at  : 2023-12-22
 * Author      : jeefo
 * Purpose     :
 * Description :
@@ -12,6 +12,7 @@
 #include <stdint.h>
 #include <stdlib.h>
 #include <string.h>
+#include <errno.h>
 #include <assert.h>
 
 #define INITIAL_CAP 8
@@ -20,7 +21,6 @@ static const char* command_type_to_string(CommandOptionType type) {
   switch (type) {
   case COMMAND_OPTION_STRING : return "String";
   case COMMAND_OPTION_INT    : return "Int";
-  case COMMAND_OPTION_UINT   : return "UInt";
   case COMMAND_OPTION_BOOL   : return "Boolean";
   default:
     assert(false && "INVALID OPTION TYPE");
@@ -58,14 +58,12 @@ static void print_option_default_value(CommandOption* option) {
   printf(" and (Default => ");
   switch (option->type) {
   case COMMAND_OPTION_STRING:
-    printf("%s", (char*)option->value);
+    printf("%s", (char*)option->default_value);
     break;
-  case COMMAND_OPTION_INT:
-    printf("%d", *(int*)option->value);
-    break;
-  case COMMAND_OPTION_UINT:
-    printf("%d", *(uint32_t*)option->value);
-    break;
+  case COMMAND_OPTION_INT: {
+    int i = (int)(intptr_t)option->default_value;
+    printf("%d", i);
+  } break;
   case COMMAND_OPTION_BOOL: {
     bool v = (bool)option->default_value;
     printf("%s", v ? "true" : "false");
@@ -139,37 +137,98 @@ CommandOption create_command_option(const char* name, CommandOptionType type) {
   };
 }
 
-void command_parse_options(Command* c, int* argc, char*** argv) {
+bool is_option_match(CommandOption* option, char const* arg) {
   static char buffer[64];
+  snprintf(buffer, sizeof(buffer), "--%s", option->name);
+  if (strcmp(buffer, arg) == 0) return true;
+
+  for (size_t i = 0; i < option->aliases.length; ++i) {
+    const char* alias = option->aliases.ptr[i];
+    if (strcmp(alias, arg) == 0) return true;
+  }
+
+  return false;
+}
+
+void command_parse_options(Command* c, int* argc, char*** argv) {
   arg_shift(argc, argv);
 
-  while (*argc > 0) {
+  for (size_t i = 0; i < c->options.length && *argc > 0; ++i) {
     bool is_option_found = false;
-    for (size_t i = 0; i < c->options.length; ++i) {
-      CommandOption* o = c->options.ptr[i];
-      snprintf(buffer, sizeof(buffer), "--%s", o->name);
+    CommandOption* o = c->options.ptr[i];
+    char* arg = *(argv[0]);
 
-      if (strcmp(buffer, *(argv[0])) == 0) {
-        switch (o->type) {
-        case COMMAND_OPTION_STRING:
-        case COMMAND_OPTION_INT:
-        case COMMAND_OPTION_UINT:
-        case COMMAND_OPTION_MAX:
-          assert(false && "Unimplemented");
-          break;
-        case COMMAND_OPTION_BOOL:
-          o->value        = (void*)true;
-          o->is_value_set = true;
-          is_option_found = true;
+    if (is_option_match(o, arg)) {
+      switch (o->type) {
+      case COMMAND_OPTION_INT:
+        if (*argc > 0) {
+          arg_shift(argc, argv);
+        } else {
+          fprintf(stderr, "ERROR: argument value is required\n");
+          exit(EXIT_FAILURE);
+        }
+
+        int num = atoi(*(argv[0]));
+        if (errno != 0) {
+          fprintf(stderr, "ERROR: option '--%s' is not a number.\n", o->name);
+          exit(EXIT_FAILURE);
+        }
+
+        o->value        = (void*)(intptr_t)num;
+        o->is_value_set = true;
+        break;
+      case COMMAND_OPTION_STRING:
+        if (*argc > 0) {
+          arg_shift(argc, argv);
+        } else {
+          fprintf(stderr, "ERROR: argument value is required\n");
+          exit(EXIT_FAILURE);
+        }
+
+        o->value        = *(argv[0]);
+        o->is_value_set = true;
+        break;
+      case COMMAND_OPTION_BOOL:
+        o->value        = (void*)true;
+        o->is_value_set = true;
+        break;
+      default:
+        assert(false && "UNREACHABLE");
+      }
+      is_option_found = true;
+    }
+
+    if (is_option_found && *argc > 0) {
+      arg_shift(argc, argv);
+    }
+  }
+}
+
+void command_parse(int argc, char** argv, char const* program, DynArray* cm) {
+  while (argc > 0) {
+    bool is_command_found = false;
+    for (size_t i = 0; i < cm->length && !is_command_found; ++i) {
+      Command* c = cm->ptr[i];
+      if (strcmp(c->name, argv[0]) == 0) {
+        command_parse_options(c, &argc, &argv);
+        c->execute(program, cm, c);
+        is_command_found = true;
+        break;
+      }
+      for (size_t j = 0; j < c->aliases.length; ++j) {
+        const char* alias_name = c->aliases.ptr[j];
+        if (strcmp(alias_name, argv[0]) == 0) {
+          command_parse_options(c, &argc, &argv);
+          c->execute(program, cm, c);
+          is_command_found = true;
           break;
         }
       }
     }
 
-    if (is_option_found) {
-      if (*argc > 0) arg_shift(argc, argv);
-    } else {
-      break;
+    if (!is_command_found && argc > 0) {
+      fprintf(stderr, "ERROR: couldn't find '%s' command\n", argv[0]);
+      exit(EXIT_FAILURE);
     }
   }
 }
